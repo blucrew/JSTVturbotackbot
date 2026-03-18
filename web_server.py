@@ -7,7 +7,7 @@ import json
 import base64
 from config import BOT_ID, BOT_SECRET, REDIRECT_URI
 from db import DBManager
-from settings_manager import MEDIA_OPTIONS, resolve_media_file
+from settings_manager import MEDIA_OPTIONS, resolve_media_file, get_gif_duration_ms
 
 # --- FIX 1: Changed level to WARNING to prevent 17GB log files ---
 logging.basicConfig(filename='bot.log', level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -86,8 +86,9 @@ class WebServer:
         filename = resolve_media_file(media_key)
         if filename:
             target_room = f"room_{user_id}"
-            logger.info(f"Triggering File: {filename} for Room: {target_room}")
-            await self.sio.emit('play_media', {'file': filename}, room=target_room)
+            duration = get_gif_duration_ms(filename) + 500  # 500ms buffer after GIF ends
+            logger.info(f"Triggering File: {filename} ({duration}ms) for Room: {target_room}")
+            await self.sio.emit('play_media', {'file': filename, 'duration': duration}, room=target_room)
         else:
             logger.error(f"Failed to resolve media key: {media_key}")
 
@@ -131,7 +132,7 @@ class WebServer:
                 const img = document.getElementById('target');
                 img.src = '/media/' + data.file;
                 img.style.display = 'block';
-                setTimeout(() => {{ img.style.display = 'none'; }}, 8500);
+                setTimeout(() => {{ img.style.display = 'none'; }}, data.duration || 8500);
             }});
         </script></body></html>"""
         return web.Response(text=html, content_type='text/html')

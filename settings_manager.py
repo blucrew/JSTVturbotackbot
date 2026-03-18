@@ -1,7 +1,36 @@
+import os
 import random
 import logging
+from PIL import Image
 
 logger = logging.getLogger(__name__)
+
+MEDIA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "media")
+
+def _build_duration_cache():
+    cache = {}
+    try:
+        for filename in os.listdir(MEDIA_DIR):
+            if filename.lower().endswith(".gif"):
+                try:
+                    with Image.open(os.path.join(MEDIA_DIR, filename)) as img:
+                        total_ms = 0
+                        if getattr(img, "is_animated", False):
+                            for frame in range(img.n_frames):
+                                img.seek(frame)
+                                total_ms += img.info.get("duration", 100)
+                        cache[filename] = total_ms if total_ms > 0 else 8000
+                except Exception:
+                    cache[filename] = 8000
+    except FileNotFoundError:
+        pass
+    return cache
+
+_DURATION_CACHE = _build_duration_cache()
+
+def get_gif_duration_ms(filename):
+    """Returns the total playback duration of a GIF in milliseconds."""
+    return _DURATION_CACHE.get(filename, 8000)
 
 # Media Mapping: Display Name -> Filename(s)
 MEDIA_OPTIONS = {

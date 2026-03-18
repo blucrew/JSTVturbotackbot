@@ -54,7 +54,7 @@ class TurboTackBot:
                 if event_type == "ChatMessage":
                     text = payload.get("text", "")
                     for trigger in triggers:
-                        if trigger['enabled'] and trigger['type'] == 'chat_text':
+                        if trigger['enabled'] and trigger['type'] in ('chat_text', 'emote_reaction'):
                             if trigger['keyword'].lower() in text.lower():
                                 await self.web_server.trigger_overlay(str(channel_id), trigger['media_key'])
                 elif event_type == "WheelSpinEvent":
