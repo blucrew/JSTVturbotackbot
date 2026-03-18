@@ -13,9 +13,8 @@ from settings_manager import MEDIA_OPTIONS, resolve_media_file, get_gif_duration
 logging.basicConfig(filename='bot.log', level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 MEDIA_DIR = os.path.join(os.getcwd(), "media")
-db = DBManager()
 
-async def refresh_joystick_token(user_id):
+async def refresh_joystick_token(user_id, db):
     tokens = db.get_streamer_tokens(user_id)
     if not tokens or not tokens.get('refresh_token'):
         logger.warning(f"[REFRESH] No refresh token for {user_id}")

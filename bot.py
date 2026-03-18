@@ -20,7 +20,7 @@ class TurboTackBot:
 
     async def send_command(self, command):
         try:
-            if self.websocket and not self.websocket.closed:
+            if self.websocket:
                 await self.websocket.send(json.dumps(command))
         except Exception as e:
             logger.error(f"Error sending command: {e}")
@@ -105,7 +105,7 @@ class TurboTackBot:
             streamers = self.db.get_all_streamers()
             logger.warning(f"[REFRESH LOOP] Refreshing tokens for {len(streamers)} streamers...")
             for streamer in streamers:
-                await refresh_joystick_token(streamer['user_id'])
+                await refresh_joystick_token(streamer['user_id'], self.db)
 
     async def start(self):
         await self.web_server.start()
