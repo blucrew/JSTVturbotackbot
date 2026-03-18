@@ -4,7 +4,7 @@ import json
 import logging
 from config import BOT_ID, BOT_SECRET, REDIRECT_URI
 from db import DBManager
-from web_server import WebServer
+from web_server import WebServer, refresh_joystick_token
 
 # --- FIX APPLIED: Changed level from INFO to WARNING to stop disk filling ---
 logging.basicConfig(filename='bot.log', level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -45,6 +45,7 @@ class TurboTackBot:
                 channel_id = data["message"].get("channelId")
                 if not channel_id: return
 
+                self.db.touch_streamer(str(channel_id))
                 settings = self.db.get_settings(str(channel_id))
                 triggers = settings.get("triggers", [])
                 
@@ -98,8 +99,17 @@ class TurboTackBot:
                 logger.error(f"Connection lost: {e}. Reconnecting in 5s...")
                 await asyncio.sleep(5)
 
+    async def token_refresh_loop(self):
+        while self.running:
+            await asyncio.sleep(45 * 60)  # every 45 minutes
+            streamers = self.db.get_all_streamers()
+            logger.warning(f"[REFRESH LOOP] Refreshing tokens for {len(streamers)} streamers...")
+            for streamer in streamers:
+                await refresh_joystick_token(streamer['user_id'])
+
     async def start(self):
         await self.web_server.start()
+        asyncio.create_task(self.token_refresh_loop())
         await self.connect_and_listen()
 
 if __name__ == "__main__":

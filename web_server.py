@@ -13,6 +13,31 @@ from settings_manager import MEDIA_OPTIONS, resolve_media_file, get_gif_duration
 logging.basicConfig(filename='bot.log', level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 MEDIA_DIR = os.path.join(os.getcwd(), "media")
+db = DBManager()
+
+async def refresh_joystick_token(user_id):
+    tokens = db.get_streamer_tokens(user_id)
+    if not tokens or not tokens.get('refresh_token'):
+        logger.warning(f"[REFRESH] No refresh token for {user_id}")
+        return None
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post("https://joystick.tv/api/oauth/token",
+                data={"grant_type": "refresh_token", "refresh_token": tokens['refresh_token']},
+                auth=aiohttp.BasicAuth(BOT_ID, BOT_SECRET)) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    new_access = data.get('access_token')
+                    new_refresh = data.get('refresh_token', tokens['refresh_token'])
+                    if new_access:
+                        db.update_streamer_tokens(user_id, new_access, new_refresh)
+                        logger.warning(f"[REFRESH] Token refreshed for {user_id}")
+                        return new_access
+                logger.warning(f"[REFRESH] Failed {resp.status} for {user_id}")
+                return None
+    except Exception as e:
+        logger.error(f"[REFRESH] Error for {user_id}: {e}")
+        return None
 
 STYLE_COMMON = """
 <style>

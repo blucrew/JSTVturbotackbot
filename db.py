@@ -1,6 +1,7 @@
 import sqlite3
 import json
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -16,9 +17,17 @@ class DBManager:
         
         # Streamers Table: Stores Auth Tokens
         c.execute('''CREATE TABLE IF NOT EXISTS streamers
-                     (user_id TEXT PRIMARY KEY, 
-                      access_token TEXT, 
-                      refresh_token TEXT)''')
+                     (user_id TEXT PRIMARY KEY,
+                      access_token TEXT,
+                      refresh_token TEXT,
+                      installed_at REAL,
+                      last_seen REAL)''')
+        # Migrate: add columns if they don't exist (for existing DBs)
+        for col in ("installed_at REAL", "last_seen REAL"):
+            try:
+                c.execute(f"ALTER TABLE streamers ADD COLUMN {col}")
+            except Exception:
+                pass
         
         # Settings Table: Stores the JSON config for triggers
         c.execute('''CREATE TABLE IF NOT EXISTS settings
@@ -29,26 +38,43 @@ class DBManager:
         conn.close()
 
     def update_streamer(self, user_id, access_token, refresh_token=None):
-        """ Saves or updates a streamer's auth tokens """
+        """ Saves or updates a streamer's auth tokens. Sets installed_at on first install. """
         conn = sqlite3.connect(self.db_name)
         c = conn.cursor()
-        
-        if refresh_token:
-            c.execute('''INSERT OR REPLACE INTO streamers (user_id, access_token, refresh_token)
-                         VALUES (?, ?, ?)''', (user_id, access_token, refresh_token))
+        now = time.time()
+
+        c.execute("SELECT installed_at FROM streamers WHERE user_id=?", (user_id,))
+        row = c.fetchone()
+
+        if row:
+            # Existing streamer — update tokens, preserve installed_at
+            c.execute('''UPDATE streamers SET access_token=?, refresh_token=COALESCE(?, refresh_token)
+                         WHERE user_id=?''', (access_token, refresh_token, user_id))
         else:
-            # If we only got a new access token, keep the old refresh token
-            c.execute('''UPDATE streamers SET access_token=? WHERE user_id=?''', 
-                      (access_token, user_id))
-            
-            # If user didn't exist yet, insert them (rare edge case)
-            if c.rowcount == 0:
-                c.execute('''INSERT INTO streamers (user_id, access_token, refresh_token)
-                             VALUES (?, ?, ?)''', (user_id, access_token, None))
+            # New install
+            c.execute('''INSERT INTO streamers (user_id, access_token, refresh_token, installed_at)
+                         VALUES (?, ?, ?, ?)''', (user_id, access_token, refresh_token, now))
 
         conn.commit()
         conn.close()
         logger.info(f"💾 Updated DB for user {user_id}")
+
+    def update_streamer_tokens(self, user_id, access_token, refresh_token):
+        """ Updates tokens only — used by the token refresh flow. """
+        conn = sqlite3.connect(self.db_name)
+        c = conn.cursor()
+        c.execute("UPDATE streamers SET access_token=?, refresh_token=? WHERE user_id=?",
+                  (access_token, refresh_token, user_id))
+        conn.commit()
+        conn.close()
+
+    def touch_streamer(self, user_id):
+        """ Updates last_seen timestamp for a streamer. """
+        conn = sqlite3.connect(self.db_name)
+        c = conn.cursor()
+        c.execute("UPDATE streamers SET last_seen=? WHERE user_id=?", (time.time(), user_id))
+        conn.commit()
+        conn.close()
 
     def get_all_streamers(self):
         """ Returns a list of all users to reconnect on startup """
