@@ -2,14 +2,13 @@ import asyncio
 import websockets
 import json
 import logging
-from config import BOT_ID, BOT_SECRET, REDIRECT_URI
+from config import BOT_ID, BOT_SECRET, REDIRECT_URI, get_basic_auth_token
 from db import DBManager
 from web_server import WebServer, refresh_joystick_token
 
 # --- FIX APPLIED: Changed level from INFO to WARNING to stop disk filling ---
 logging.basicConfig(filename='bot.log', level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-WS_URL = "wss://joystick.tv/cable"
 
 class TurboTackBot:
     def __init__(self):
@@ -26,10 +25,9 @@ class TurboTackBot:
             logger.error(f"Error sending command: {e}")
 
     async def subscribe_user(self, channel_id, token):
-        payload = {"command": "subscribe", "identifier": json.dumps({"channel": "GatewayChannel", "id": str(channel_id)})}
+        payload = {"command": "subscribe", "identifier": json.dumps({"channel": "GatewayChannel", "streamer_id": str(channel_id)})}
         await self.send_command(payload)
-        # logger.info calls are now ignored unless they are warnings/errors
-        logger.info(f"Subscribed to events for User {channel_id}")
+        logger.warning(f"Subscribed to events for streamer {channel_id}")
 
     async def add_subscription(self, user_id, token):
         await self.subscribe_user(user_id, token)
@@ -37,8 +35,8 @@ class TurboTackBot:
     async def handle_message(self, message):
         try:
             data = json.loads(message)
-            if "ping" in data or "type" not in data: return
-            if data.get("type") == "confirm_subscription": return
+            if not isinstance(data, dict): return
+            if data.get("type") in ("ping", "confirm_subscription"): return
             if "message" in data and "event" in data["message"]:
                 event_type = data["message"]["event"]
                 payload = data["message"].get("data", {})
@@ -88,15 +86,19 @@ class TurboTackBot:
         while self.running:
             try:
                 all_streamers = self.db.get_all_streamers()
-                logger.info(f"Connecting to Joystick.TV... (Re-subscribing {len(all_streamers)} users)")
-                async with websockets.connect(WS_URL, subprotocols=["actioncable-v1-json", "actioncable-unsupported"]) as ws:
+                uri = f"wss://joystick.tv/cable?token={get_basic_auth_token()}"
+                logger.warning(f"Connecting to Joystick.TV... ({len(all_streamers)} streamers)")
+                async with websockets.connect(uri, subprotocols=["actioncable-v1-json", "actioncable-unsupported"]) as ws:
                     self.websocket = ws
                     for streamer in all_streamers:
                         await self.subscribe_user(streamer['user_id'], streamer['access_token'])
                     async for message in ws:
                         await self.handle_message(message)
+                logger.warning("WebSocket closed cleanly. Reconnecting in 5s...")
             except Exception as e:
                 logger.error(f"Connection lost: {e}. Reconnecting in 5s...")
+            finally:
+                self.websocket = None
                 await asyncio.sleep(5)
 
     async def token_refresh_loop(self):
